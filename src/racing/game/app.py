@@ -341,13 +341,45 @@ def build_scene(config: GameConfig) -> RunnableApp:
     audio_runtime = create_racing_audio_runtime(ursina=ursina, config=config.audio)
     _register_audio_vehicles(audio_runtime=audio_runtime, robots=(robot,))
     audio_control = _add_audio_hud_control(ursina=ursina, audio_runtime=audio_runtime)
+    restart_button = ursina.Button(
+        text="Restart",
+        position=(0.54, 0.44),
+        scale=(0.22, 0.060),
+        color=ursina.color.rgba(0.020, 0.023, 0.030, 0.88),
+        highlight_color=ursina.color.rgba(0.12, 0.16, 0.24, 0.96),
+        pressed_color=ursina.color.rgba(0.20, 0.26, 0.36, 0.98),
+    )
     sensor_state = RobotSensorBuilderState()
     simulation_time_s = 0.0
     simulation_accumulator_seconds = 0.0
+    student_controller = None if config.student_controller is None else controller_for_copy(config.student_controller)
+
+    def restart_run() -> None:
+        """Reset the current run back to the initial seeded spawn."""
+        nonlocal sensor_state, simulation_accumulator_seconds, simulation_time_s, student_controller, student_runtime
+        reset_robot_vehicle(
+            robot,
+            position=spawn_position,
+            heading_degrees=spawn_heading_degrees,
+            reset_damage=True,
+        )
+        camera_rig.reset_follow_history()
+        sensor_state = RobotSensorBuilderState()
+        simulation_time_s = 0.0
+        simulation_accumulator_seconds = 0.0
+        if config.student_controller is not None:
+            student_controller = controller_for_copy(config.student_controller)
+            student_runtime = student_marshal_runtime(
+                robot=robot,
+                start_position=TrackPoint(spawn_position[0], spawn_position[2]),
+                starting_progress_distance_m=spawn_progress_distance_m,
+            )
+
+    restart_button.on_click = restart_run
 
     def update() -> None:
         """Advance the playable scene by one rendered frame."""
-        nonlocal sensor_state, simulation_accumulator_seconds, simulation_time_s
+        nonlocal sensor_state, simulation_accumulator_seconds, simulation_time_s, student_controller
         frame_delta_seconds = min(float(ursina.time.dt), PLAYABLE_MAX_FRAME_DELTA_SECONDS)
         update_camera_cycle(camera_rig, cycle_key_down=bool(ursina.held_keys["v"]))
         _update_audio_key_control(
@@ -362,7 +394,7 @@ def build_scene(config: GameConfig) -> RunnableApp:
         ):
             simulation_time_s += config.fixed_delta_seconds
             if not robot.eliminated:
-                if config.student_controller is None:
+                if student_controller is None:
                     sync_gamepad_axes(ursina.held_keys)
                     command = manual_drive_command(ursina.held_keys)
                     if human_recorder is not None:
@@ -388,7 +420,7 @@ def build_scene(config: GameConfig) -> RunnableApp:
                         dt_s=config.fixed_delta_seconds,
                         previous_state=sensor_state,
                     )
-                    command = config.student_controller(sensors)
+                    command = student_controller(sensors)
                 audio_runtime.record_command(robot, command)
                 apply_robot_vehicle_command(robot=robot, command=command)
             physics_scene.step(config.fixed_delta_seconds)
