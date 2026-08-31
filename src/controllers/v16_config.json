@@ -1,0 +1,12 @@
+{
+  "score": 464.59,
+  "planner": {
+    "pure_pursuit_gain": 1.65,
+    "heading_gain": 0.34,
+    "center_gain": 0.12,
+    "speed_numerator": 36.4,
+    "curve_speed_gain": 0.95,
+    "minimum_corner_speed": 12.0,
+    "apex_bias_m": 0.0
+  }
+}
