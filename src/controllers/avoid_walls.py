@@ -2,10 +2,10 @@
 
 from racing import RobotCommand, RobotSensors
 
-RACING_NAME: str = "Crash Fast"
-RACING_COLOR: str = "#ff8700"
+RACING_NAME: str = "Avoid Walls"
+RACING_COLOR: str = "#ff00d9"
 
 def control(sensors: RobotSensors) -> RobotCommand:
-    throttle: float = 1.0
+    throttle: float = 0.4
     steer: float = 0.0
     return RobotCommand(throttle, steer)
