@@ -5,6 +5,7 @@ import importlib.util
 import json
 import stat
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 from types import ModuleType
@@ -159,6 +160,69 @@ def test_export_selected_controller_includes_local_python_dependencies(
             "controllers/main.py",
             "controllers/helper.py",
         } <= names
+
+
+def test_export_selected_controller_includes_literal_sibling_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exporter = load_exporter()
+    source_root = tmp_path / "src"
+    controllers_root = source_root / "controllers"
+    controllers_root.mkdir(parents=True)
+    (controllers_root / "__init__.py").write_text("", encoding="utf-8")
+    (controllers_root / "main.py").write_text(
+        'from pathlib import Path\nASSET = Path(__file__).with_name("map.json")\n',
+        encoding="utf-8",
+    )
+    (controllers_root / "map.json").write_text("{}\n", encoding="utf-8")
+    output = tmp_path / "submission.zip"
+    monkeypatch.setattr(exporter, "SOURCE_ROOT", source_root)
+    monkeypatch.setattr(exporter, "CONTROLLERS_ROOT", controllers_root)
+
+    exporter.export_controllers(("controllers.main",), output)
+
+    with zipfile.ZipFile(output) as archive:
+        assert set(archive.namelist()) == {
+            "controllers/__init__.py",
+            "controllers/main.py",
+            "controllers/map.json",
+        }
+
+
+def test_fast_controller_export_loads_from_an_isolated_directory(tmp_path: Path) -> None:
+    exporter = load_exporter()
+    output = tmp_path / "submission.zip"
+    extracted = tmp_path / "isolated"
+
+    exporter.export_controllers(("controllers.fast_controller",), output)
+    with zipfile.ZipFile(output) as archive:
+        assert set(archive.namelist()) == {
+            "controllers/__init__.py",
+            "controllers/track_signature_map.json",
+            "controllers/fast_controller.py",
+        }
+        archive.extractall(extracted)
+
+    runtime_source = Path(__file__).parents[1] / "src"
+    code = (
+        "import sys\n"
+        f"sys.path.append({str(runtime_source)!r})\n"
+        "from pathlib import Path\n"
+        "from racing import RobotSensors, load_student_submission\n"
+        "submission = load_student_submission('controllers.fast_controller')\n"
+        "assert submission.controller(RobotSensors()).throttle > 0.0\n"
+        "module = sys.modules['controllers.fast_controller']\n"
+        "assert Path(module.__file__).resolve().parent == Path.cwd() / 'controllers'\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=extracted,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_export_student_controllers_reports_missing_module(tmp_path: Path) -> None:

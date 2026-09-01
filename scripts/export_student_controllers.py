@@ -55,6 +55,10 @@ def selected_sources(module_names: tuple[str, ...], *, all_controllers: bool) ->
             pending.extend(
                 dependency for dependency in local_controller_dependencies(source) if dependency not in sources_by_path
             )
+        assets = {
+            asset for source in sources_by_path if source.suffix == ".py" for asset in local_controller_assets(source)
+        }
+        sources_by_path.update(assets)
         package_init = CONTROLLERS_ROOT / "__init__.py"
         if package_init.is_file():
             sources_by_path.add(package_init)
@@ -83,6 +87,26 @@ def local_controller_dependencies(source: Path) -> tuple[Path, ...]:
             elif imported_from == "controllers":
                 module_names.update(f"controllers.{alias.name}" for alias in node.names)
     return tuple(sorted(candidate for name in module_names if (candidate := module_source(name)).is_file()))
+
+
+def local_controller_assets(source: Path) -> tuple[Path, ...]:
+    """Find literal sibling assets loaded with ``Path(__file__).with_name``."""
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    assets: set[Path] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "with_name"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            name = node.args[0].value
+            candidate = source.with_name(name)
+            if Path(name).name == name and candidate.is_file() and candidate.suffix != ".py":
+                assets.add(candidate)
+    return tuple(sorted(assets))
 
 
 def export_controllers(
